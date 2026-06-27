@@ -1,0 +1,32 @@
+name: Actualizar Conocimiento Automatizado
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # Se ejecuta todos los días a las 2:00 AM
+  workflow_dispatch: # Te permite ejecutarlo manualmente con un botón en GitHub
+
+jobs:
+  refresh-data:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Permiso crucial para que el bot pueda modificar el repo
+    steps:
+    - name: Clonar repositorio
+      uses: actions/checkout@v4
+
+    - name: Configurar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Instalar dependencias
+      run: |
+        pip install requests beautifulsoup4
+
+    - name: Ejecutar Scraper
+      run: python scraper_eidum.py
+
+    - name: Guardar cambios en el repositorio
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: "Bot: Conocimiento actualizado desde la web oficial"
