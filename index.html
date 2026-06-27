@@ -163,20 +163,37 @@
         }
     }
 
-    // Buscador básico por palabras clave sobre los bloques de texto raspados
+    // Buscador optimizado para el plan gratuito de Groq (Evita superar límites de tokens)
     function construirContexto(preguntaUsuario) {
         let contextoRelevante = "";
-        const palabrasClave = preguntaUsuario.toLowerCase().split(" ").filter(p => p.length > 3);
+        
+        const normalizar = (texto) => texto.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const preguntaLimpia = normalizar(preguntaUsuario);
+
+        // Extraemos raíces de palabras de más de 4 letras para la búsqueda rápida
+        const palabrasClave = preguntaLimpia.split(" ")
+            .filter(p => p.length > 4)
+            .map(p => p.substring(0, 5));
+
+        let bloquesEncontrados = 0;
 
         fuenteConocimiento.forEach(sitio => {
-            const coincide = palabrasClave.some(palabra => sitio.texto.toLowerCase().includes(palabra));
-            if (coincide) {
+            const textoSitioLimpio = normalizar(sitio.texto);
+            const coincide = palabrasClave.some(raiz => textoSitioLimpio.includes(raiz));
+            
+            // Limitamos a un máximo de 2 bloques web coincidentes para controlar el tamaño
+            if (coincide && bloquesEncontrados < 2) {
                 contextoRelevante += `[Fuente URL: ${sitio.url}]\nContenido:\n${sitio.texto}\n\n`;
+                bloquesEncontrados++;
             }
         });
 
+        // Si no encuentra coincidencia exacta, envía un fragmento básico muy reducido
         if (!contextoRelevante) {
-            contextoRelevante = fuenteConocimiento.map(s => s.texto).join("\n\n").substring(0, 6000);
+            contextoRelevante = fuenteConocimiento.map(s => s.texto).join("\n\n").substring(0, 2500);
+        } else {
+            // Aseguramos que bajo ningún concepto el texto final exceda el límite de seguridad
+            contextoRelevante = contextoRelevante.substring(0, 3000);
         }
         return contextoRelevante;
     }
