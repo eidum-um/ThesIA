@@ -153,7 +153,6 @@
         if (e.key === 'Enter') enviarMensaje();
     }
 
-    // Cargar el JSON generado por el Scraper de Python
     async function cargarConocimiento() {
         try {
             const res = await fetch('data.json');
@@ -163,39 +162,48 @@
         }
     }
 
-    // Buscador optimizado para el plan gratuito de Groq (Evita superar límites de tokens)
+    // Buscador avanzado por fragmentos semánticos completos
     function construirContexto(preguntaUsuario) {
-        let contextoRelevante = "";
+        let párrafosCoincidentes = [];
         
         const normalizar = (texto) => texto.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
         const preguntaLimpia = normalizar(preguntaUsuario);
 
-        // Extraemos raíces de palabras de más de 4 letras para la búsqueda rápida
+        // Extraemos palabras clave de búsqueda potentes (más de 4 letras)
         const palabrasClave = preguntaLimpia.split(" ")
             .filter(p => p.length > 4)
-            .map(p => p.substring(0, 5));
-
-        let bloquesEncontrados = 0;
+            .map(p => p.substring(0, 5)); // Usamos raíces semánticas (ej: "matri" para matrícula/matricularse)
 
         fuenteConocimiento.forEach(sitio => {
-            const textoSitioLimpio = normalizar(sitio.texto);
-            const coincide = palabrasClave.some(raiz => textoSitioLimpio.includes(raiz));
+            // Troceamos el texto largo de la página web en párrafos reales usando puntos o espacios amplios
+            const parrafos = sitio.texto.split(/(?<=\.)\s+/);
             
-            // Limitamos a un máximo de 2 bloques web coincidentes para controlar el tamaño
-            if (coincide && bloquesEncontrados < 2) {
-                contextoRelevante += `[Fuente URL: ${sitio.url}]\nContenido:\n${sitio.texto}\n\n`;
-                bloquesEncontrados++;
-            }
+            parrafos.forEach(parrafo => {
+                const parrafoLimpio = normalizar(parrafo);
+                // Comprobamos el nivel de coincidencia de este párrafo con las palabras clave
+                const coincidencias = palabrasClave.filter(raiz => parrafoLimpio.includes(raiz)).length;
+                
+                if (coincidencias > 0) {
+                    párrafosCoincidentes.push({
+                        score: coincidencias,
+                        texto: `[Fuente: ${sitio.url}] ${parrafo.trim()}`
+                    });
+                }
+            });
         });
 
-        // Si no encuentra coincidencia exacta, envía un fragmento básico muy reducido
-        if (!contextoRelevante) {
-            contextoRelevante = fuenteConocimiento.map(s => s.texto).join("\n\n").substring(0, 2500);
-        } else {
-            // Aseguramos que bajo ningún concepto el texto final exceda el límite de seguridad
-            contextoRelevante = contextoRelevante.substring(0, 3000);
+        // Ordenamos los párrafos encontrados de mayor a menor relevancia
+        párrafosCoincidentes.sort((a, b) => b.score - a.score);
+
+        // Nos quedamos únicamente con los 4 mejores párrafos (completos e inteligentes)
+        const mejoresParrafos = párrafosCoincidentes.slice(0, 4).map(p => p.texto);
+
+        // Si no se encuentra nada coherente, enviamos un extracto general controlado de las páginas principales
+        if (mejoresParrafos.length === 0) {
+            return fuenteConocimiento.map(s => s.texto).join("\n").substring(0, 2000);
         }
-        return contextoRelevante;
+
+        return mejoresParrafos.join("\n\n");
     }
 
     async function enviarMensaje() {
@@ -212,7 +220,6 @@
         try {
             mostrarMensaje("Pensando...", 'bot-msg', 'loading-msg');
 
-            // Petición directa a tu Cloudflare Worker seguro
             const response = await fetch('https://bitter-bird-6c05.eidum.workers.dev', {
                 method: 'POST',
                 headers: {
@@ -229,26 +236,23 @@
 
             if (!response.ok) {
                 const textoError = await response.text();
-                throw new Error(`Error del servidor Cloudflare (${response.status}): ${textoError}`);
+                throw new Error(`Error Cloudflare (${response.status}): ${textoError}`);
             }
 
             const data = await response.json();
             
-            // Validación estricta de la estructura JSON devuelta por Groq
             if (data && data.choices && data.choices[0] && data.choices[0].message) {
                 const respuestaBot = data.choices[0].message.content;
                 mostrarMensaje(respuestaBot, 'bot-msg');
             } else {
-                console.error("Estructura de datos inesperada:", data);
-                if (data.error) console.error("Detalle del error interno de Groq:", data.error.message);
-                throw new Error("La respuesta del backend no contiene los bloques válidos esperados.");
+                throw new Error("Estructura de respuesta inválida.");
             }
 
         } catch (error) {
             const loading = document.getElementById('loading-msg');
             if (loading) loading.remove();
             mostrarMensaje("Lo siento, en este momento no puedo procesar tu consulta. Por favor, inténtalo más tarde.", 'bot-msg');
-            console.error("Error detallado en la petición:", error.message);
+            console.error("Error:", error.message);
         }
     }
 
