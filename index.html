@@ -195,7 +195,7 @@
         try {
             mostrarMensaje("Pensando...", 'bot-msg', 'loading-msg');
 
-            // Petición directa y segura a tu Cloudflare Worker (Sin exponer claves)
+            // Petición directa a tu Cloudflare Worker seguro
             const response = await fetch('https://bitter-bird-6c05.eidum.workers.dev', {
                 method: 'POST',
                 headers: {
@@ -210,17 +210,28 @@
             const loading = document.getElementById('loading-msg');
             if (loading) loading.remove();
 
-            if (!response.ok) throw new Error("Error en la respuesta del servidor intermediario");
+            if (!response.ok) {
+                const textoError = await response.text();
+                throw new Error(`Error del servidor Cloudflare (${response.status}): ${textoError}`);
+            }
 
             const data = await response.json();
-            const respuestaBot = data.choices[0].message.content;
-            mostrarMensaje(respuestaBot, 'bot-msg');
+            
+            // Validación estricta de la estructura JSON devuelta por Groq
+            if (data && data.choices && data.choices[0] && data.choices[0].message) {
+                const respuestaBot = data.choices[0].message.content;
+                mostrarMensaje(respuestaBot, 'bot-msg');
+            } else {
+                console.error("Estructura de datos inesperada:", data);
+                if (data.error) console.error("Detalle del error interno de Groq:", data.error.message);
+                throw new Error("La respuesta del backend no contiene los bloques válidos esperados.");
+            }
 
         } catch (error) {
             const loading = document.getElementById('loading-msg');
             if (loading) loading.remove();
             mostrarMensaje("Lo siento, en este momento no puedo procesar tu consulta. Por favor, inténtalo más tarde.", 'bot-msg');
-            console.error("Error en la petición:", error);
+            console.error("Error detallado en la petición:", error.message);
         }
     }
 
