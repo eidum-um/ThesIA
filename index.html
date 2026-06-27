@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Asistente Virtual - Conocimiento Cerrado</title>
+    <title>Asistente Virtual - EIDUM</title>
     <style>
         :root {
             --primary-color: #0056b3;
@@ -47,29 +47,6 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-        }
-
-        #config-btn {
-            background: transparent;
-            border: 1px solid white;
-            color: white;
-            border-radius: 4px;
-            padding: 4px 8px;
-            cursor: pointer;
-            font-size: 0.8rem;
-        }
-
-        #config-panel {
-            background: #fff3cd;
-            padding: 10px 20px;
-            display: none;
-            border-bottom: 1px solid #ffeeba;
-        }
-
-        #config-panel input {
-            width: 70%;
-            padding: 5px;
-            font-size: 0.85rem;
         }
 
         #chat-box {
@@ -152,17 +129,11 @@
 
 <div id="chat-container">
     <header>
-        <span>Asistente Web Oficial</span>
-        <button id="config-btn" onclick="toggleConfig()">Configurar API</button>
+        <span>Asistente Web Oficial EIDUM</span>
     </header>
 
-    <div id="config-panel">
-        <label for="api-key" style="font-size: 0.85rem;">OpenAI API Key: </label>
-        <input type="password" id="api-key" placeholder="sk-..." onchange="guardarKey()">
-    </div>
-
     <div id="chat-box">
-        <div class="msg bot-msg">¡Hola! Soy el asistente virtual. ¿En qué te puedo ayudar hoy basándome en la información de la web oficial?</div>
+        <div class="msg bot-msg">¡Hola! Soy el asistente virtual de la Escuela Internacional de Doctorado. ¿En qué te puedo ayudar hoy basándome en la información de la web oficial?</div>
     </div>
 
     <div id="input-area">
@@ -174,23 +145,9 @@
 <script>
     let fuenteConocimiento = [];
 
-    // Cargar la API Key guardada si existe
     window.onload = async () => {
-        if (localStorage.getItem('openai_key')) {
-            document.getElementById('api-key').value = localStorage.getItem('openai_key');
-        }
         await cargarConocimiento();
     };
-
-    function toggleConfig() {
-        const panel = document.getElementById('config-panel');
-        panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
-    }
-
-    function guardarKey() {
-        const key = document.getElementById('api-key').value.trim();
-        localStorage.setItem('openai_key', key);
-    }
 
     function evaluarEnter(e) {
         if (e.key === 'Enter') enviarMensaje();
@@ -212,14 +169,12 @@
         const palabrasClave = preguntaUsuario.toLowerCase().split(" ").filter(p => p.length > 3);
 
         fuenteConocimiento.forEach(sitio => {
-            // Si la pregunta comparte palabras con el texto de esa URL, añadimos el bloque
             const coincide = palabrasClave.some(palabra => sitio.texto.toLowerCase().includes(palabra));
             if (coincide) {
                 contextoRelevante += `[Fuente URL: ${sitio.url}]\nContenido:\n${sitio.texto}\n\n`;
             }
         });
 
-        // Si no hay match específico, limitamos el contexto a las primeras páginas por tamaño de tokens
         if (!contextoRelevante) {
             contextoRelevante = fuenteConocimiento.map(s => s.texto).join("\n\n").substring(0, 6000);
         }
@@ -229,56 +184,33 @@
     async function enviarMensaje() {
         const input = document.getElementById('user-input');
         const mensaje = input.value.trim();
-        const apiKey = document.getElementById('api-key').value.trim();
 
         if (!mensaje) return;
-
-        if (!apiKey) {
-            mostrarMensaje("Por favor, introduce y configura tu OpenAI API Key arriba para poder responder.", 'system-msg');
-            toggleConfig();
-            return;
-        }
 
         mostrarMensaje(mensaje, 'user-msg');
         input.value = '';
 
         const contexto = construirContexto(mensaje);
 
-        // SYSTEM PROMPT: Garantiza el comportamiento de conocimiento cerrado
-        const systemPrompt = `Eres un asistente virtual corporativo estricto y educado. Tu único objetivo es responder a las preguntas de los usuarios utilizando exclusivamente el contexto que se te proporciona a continuación.
-        
-        REGLAS CRÍTICAS:
-        1. Responde solo con la información que encuentres de manera explícita en el contexto proporcionado.
-        2. Si la respuesta no se encuentra en el contexto, debes contestar textualmente y sin añadir nada más: "Lo siento, solo puedo responder preguntas relacionadas con la información oficial disponible en la web."
-        3. No inventes, no supongas, ni uses tu conocimiento externo bajo ningún concepto.
-        
-        Contexto oficial extraído de la web:
-        ${contexto}`;
-
         try {
             mostrarMensaje("Pensando...", 'bot-msg', 'loading-msg');
 
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            // Petición directa y segura a tu Cloudflare Worker (Sin exponer claves)
+            const response = await fetch('https://bitter-bird-6c05.eidum.workers.dev', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    model: "gpt-4o-mini",
-                    messages: [
-                        { role: "system", content: systemPrompt },
-                        { role: "user", content: mensaje }
-                    ],
-                    temperature: 0.0 // Evita cualquier tipo de alucinación o creatividad
+                    prompt: mensaje,
+                    contexto: contexto
                 })
             });
 
-            // Eliminar el mensaje de "Pensando..."
             const loading = document.getElementById('loading-msg');
             if (loading) loading.remove();
 
-            if (!response.ok) throw new Error("Error en la respuesta de la API");
+            if (!response.ok) throw new Error("Error en la respuesta del servidor intermediario");
 
             const data = await response.json();
             const respuestaBot = data.choices[0].message.content;
@@ -287,7 +219,8 @@
         } catch (error) {
             const loading = document.getElementById('loading-msg');
             if (loading) loading.remove();
-            mostrarMensaje("Error al conectar con el servicio de IA. Verifica tu API Key.", 'bot-msg');
+            mostrarMensaje("Lo siento, en este momento no puedo procesar tu consulta. Por favor, inténtalo más tarde.", 'bot-msg');
+            console.error("Error en la petición:", error);
         }
     }
 
